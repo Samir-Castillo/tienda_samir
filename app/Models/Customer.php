@@ -24,6 +24,8 @@ use Illuminate\Support\Carbon;
  * @property string|null $phone
  * @property string|null $country_code
  * @property string|null $municipality_code
+ * @property int|null $factus_municipality_id
+ * @property array<int, string>|null $responsibilities
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -41,6 +43,8 @@ use Illuminate\Support\Carbon;
     'phone',
     'country_code',
     'municipality_code',
+    'factus_municipality_id',
+    'responsibilities',
 ])]
 class Customer extends Model
 {
@@ -55,5 +59,17 @@ class Customer extends Model
     public function invoices(): HasMany
     {
         return $this->hasMany(Invoice::class);
+    }
+
+    /**
+     * Get the attributes that should be cast.
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'responsibilities' => 'array',
+        ];
     }
 }

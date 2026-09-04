@@ -18,7 +18,7 @@ class ProductSeeder extends Seeder
     public function run(): void
     {
         $unitUnidad = UnitOfMeasure::query()->where('code', 'UOM-UND')->firstOrFail();
-        $tax19 = Tax::query()->where('code', 'TAX-19')->firstOrFail();
+        $tax19 = Tax::query()->where('code', '01')->firstOrFail();
 
         $products = [
             [
@@ -50,7 +50,7 @@ class ProductSeeder extends Seeder
                 ],
             );
 
-            $created->taxes()->syncWithoutDetaching([
+            $created->taxes()->sync([
                 $tax19->id => [
                     'rate' => 19,
                     'is_excluded' => false,

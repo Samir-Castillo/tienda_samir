@@ -13,27 +13,29 @@ class CustomerFactory extends Factory
     /**
      * Define the model's default state.
      *
-     * The code values chosen here are generic development placeholders, not
-     * official Factus codes. Confirmed values must come from the Factus API.
+     * The default is a natural person using the official Factus codes used in
+     * the sandbox test (CC, PN, tribute 01 = IVA, municipality San Gil id 980).
      *
      * @return array<string, mixed>
      */
     public function definition(): array
     {
         return [
-            'identification_document_code' => 'DEV-ID',
+            'identification_document_code' => 'CC',
             'identification' => fake()->numerify('#########'),
             'dv' => null,
-            'legal_organization_code' => 'DEV-LG',
-            'tribute_code' => null,
-            'company' => fake()->company(),
-            'trade_name' => fake()->company(),
-            'names' => null,
+            'legal_organization_code' => 'PN',
+            'tribute_code' => '01',
+            'company' => null,
+            'trade_name' => null,
+            'names' => fake()->name(),
             'address' => fake()->streetAddress(),
             'email' => fake()->safeEmail(),
             'phone' => fake()->phoneNumber(),
             'country_code' => 'CO',
-            'municipality_code' => null,
+            'municipality_code' => '68679',
+            'factus_municipality_id' => 980,
+            'responsibilities' => ['R-99-PN'],
         ];
     }
 
@@ -46,6 +48,21 @@ class CustomerFactory extends Factory
             'company' => null,
             'trade_name' => null,
             'names' => fake()->name(),
+        ]);
+    }
+
+    /**
+     * Indicate that the customer is a legal person.
+     */
+    public function legalPerson(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'identification_document_code' => 'NIT',
+            'dv' => fake()->digit(),
+            'legal_organization_code' => 'PJ',
+            'company' => fake()->company(),
+            'trade_name' => fake()->company(),
+            'names' => null,
         ]);
     }
 }

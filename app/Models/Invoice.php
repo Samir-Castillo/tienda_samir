@@ -33,8 +33,11 @@ use Illuminate\Support\Carbon;
  * @property string|null $factus_status
  * @property string|null $cufe
  * @property string|null $qr_code
+ * @property string|null $qr_image
  * @property string|null $pdf_url
  * @property string|null $xml_url
+ * @property string|null $factus_public_url
+ * @property array<mixed>|null $factus_errors
  * @property Carbon|null $validated_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -60,8 +63,11 @@ use Illuminate\Support\Carbon;
     'factus_status',
     'cufe',
     'qr_code',
+    'qr_image',
     'pdf_url',
     'xml_url',
+    'factus_public_url',
+    'factus_errors',
     'validated_at',
 ])]
 class Invoice extends Model
@@ -146,6 +152,7 @@ class Invoice extends Model
             'total' => 'decimal:2',
             'status' => InvoiceStatus::class,
             'validated_at' => 'datetime',
+            'factus_errors' => 'array',
         ];
     }
 }

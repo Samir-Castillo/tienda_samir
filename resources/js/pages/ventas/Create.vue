@@ -2,7 +2,7 @@
 import { Head, useHttp } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import { toast } from 'vue-sonner';
-import { store } from '@/actions/App/Http/Controllers/VentaController';
+import { create as ventasCreate, sendToFactus, store } from '@/actions/App/Http/Controllers/VentaController';
 import AlertError from '@/components/AlertError.vue';
 import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
@@ -20,8 +20,7 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
-import { create as ventasCreate } from '@/routes/ventas';
-import { Plus, Trash2 } from '@lucide/vue';
+import { CheckCircle2, ExternalLink, FileText, Plus, Send, Trash2, TriangleAlert } from '@lucide/vue';
 
 type TaxPreview = {
     code: string;
@@ -56,6 +55,26 @@ type SalePayload = {
     items: Array<{ product_id: number; quantity: number }>;
 };
 
+type CreatedInvoice = {
+    id: number;
+    reference_code: string;
+    status: string;
+    total: string;
+    factus_number: string | null;
+    cufe: string | null;
+    qr_code: string | null;
+    qr_image: string | null;
+    validated_at: string | null;
+    factus_errors: Record<string, string> | null;
+    factus_public_url: string | null;
+};
+
+type FactusResponse = {
+    message?: string;
+    error?: string;
+    invoice?: CreatedInvoice;
+};
+
 defineOptions({
     layout: {
         breadcrumbs: [
@@ -87,12 +106,20 @@ const customerId = computed<string>({
 });
 
 const http = useHttp<SalePayload>({ customer_id: null, items: [] });
+const factusHttp = useHttp<Record<string, never>>({});
 
 const selectedProductId = ref<string>('');
 const quantity = ref<number>(1);
 const cart = ref<CartLine[]>([]);
 const validationErrors = ref<Record<string, string>>({});
 const serverErrors = ref<string[]>([]);
+
+const createdInvoice = ref<CreatedInvoice | null>(null);
+const factusProcessing = ref<boolean>(false);
+const factusSent = ref<boolean>(false);
+const factusWarnings = ref<string[]>([]);
+const factusErrors = ref<string[]>([]);
+const factusMessage = ref<string>('');
 
 const selectedProduct = computed<ProductOption | null>(() => {
     if (selectedProductId.value === '') {
@@ -120,6 +147,12 @@ const subtotal = computed<number>(() => cart.value.reduce((sum, line) => sum + l
 const taxTotal = computed<number>(() => cart.value.reduce((sum, line) => sum + lineTax(line), 0));
 const grandTotal = computed<number>(() => subtotal.value + taxTotal.value);
 
+const updateQuantity = (line: CartLine, value: string | number): void => {
+    const parsed = Math.floor(Number(value));
+
+    line.quantity = Number.isFinite(parsed) && parsed >= 1 ? parsed : 1;
+};
+
 const addToCart = (): void => {
     const product = selectedProduct.value;
 
@@ -130,9 +163,9 @@ const addToCart = (): void => {
     const existing = cart.value.find((line) => line.product.id === product.id);
 
     if (existing) {
-        existing.quantity += quantity.value;
+        existing.quantity += Math.floor(quantity.value);
     } else {
-        cart.value.push({ product, quantity: quantity.value });
+        cart.value.push({ product, quantity: Math.floor(quantity.value) });
     }
 
     selectedProductId.value = '';
@@ -143,9 +176,23 @@ const removeFromCart = (productId: number): void => {
     cart.value = cart.value.filter((line) => line.product.id !== productId);
 };
 
+const cartHasValidQuantities = computed<boolean>(() => cart.value.every((line) => line.quantity >= 1));
+
 const canSubmit = computed<boolean>(
-    () => http.customer_id !== null && cart.value.length > 0 && !http.processing,
+    () =>
+        http.customer_id !== null &&
+        cart.value.length > 0 &&
+        cartHasValidQuantities.value &&
+        !http.processing,
 );
+
+const resetFactusState = (): void => {
+    factusProcessing.value = false;
+    factusSent.value = false;
+    factusWarnings.value = [];
+    factusErrors.value = [];
+    factusMessage.value = '';
+};
 
 const createSale = async (): Promise<void> => {
     if (!canSubmit.value) {
@@ -160,32 +207,99 @@ const createSale = async (): Promise<void> => {
         quantity: line.quantity,
     }));
 
-    await http.submit(store(), {
-        onSuccess: () => {
-            toast.success('Venta creada correctamente');
+    resetFactusState();
+    createdInvoice.value = null;
 
-            cart.value = [];
-            selectedProductId.value = '';
-            quantity.value = 1;
-            http.customer_id = null;
-        },
-        onError: (errors) => {
-            validationErrors.value = errors;
-        },
-        onHttpException: (response) => {
-            const data = response.data as { message?: string };
+    try {
+        const invoice = await http.submit(store(), {
+            onSuccess: () => {
+                toast.success('Venta creada correctamente');
 
-            if (data?.message) {
-                serverErrors.value = [data.message];
-            } else {
-                serverErrors.value = ['No se pudo crear la venta.'];
-            }
-        },
-        onNetworkError: () => {
-            serverErrors.value = ['Error de conexión. Intenta de nuevo.'];
-        },
-    });
+                cart.value = [];
+                selectedProductId.value = '';
+                quantity.value = 1;
+                http.customer_id = null;
+            },
+            onError: (errors) => {
+                validationErrors.value = errors;
+            },
+            onHttpException: (response) => {
+                const data = response.data as { message?: string };
+
+                if (data?.message) {
+                    serverErrors.value = [data.message];
+                } else {
+                    serverErrors.value = ['No se pudo crear la venta.'];
+                }
+            },
+            onNetworkError: () => {
+                serverErrors.value = ['Error de conexión. Intenta de nuevo.'];
+            },
+        });
+
+        if (invoice && typeof invoice === 'object' && 'id' in invoice) {
+            createdInvoice.value = invoice as CreatedInvoice;
+        }
+    } catch {
+        // Errors are surfaced through onError / onHttpException / onNetworkError.
+    }
 };
+
+const sendInvoiceToFactus = async (): Promise<void> => {
+    const invoice = createdInvoice.value;
+
+    if (!invoice || factusProcessing.value) {
+        return;
+    }
+
+    factusErrors.value = [];
+    factusWarnings.value = [];
+    factusMessage.value = '';
+    factusProcessing.value = true;
+
+    try {
+        const response = await factusHttp.post(sendToFactus(invoice.id).url, {
+            onHttpException: (httpResponse) => {
+                const data = httpResponse.data as Partial<FactusResponse>;
+
+                factusErrors.value = [
+                    data?.error ?? data?.message ?? 'Error al enviar la factura a Factus.',
+                ];
+            },
+            onNetworkError: () => {
+                factusErrors.value = ['Error de conexión con Factus. Intenta de nuevo.'];
+            },
+        });
+
+        const data = (response ?? {}) as FactusResponse;
+
+        if (data.invoice) {
+            const result = data.invoice;
+
+            createdInvoice.value = result;
+            factusSent.value = true;
+            factusMessage.value = data.message ?? '';
+
+            if (result.factus_errors && Object.keys(result.factus_errors).length > 0) {
+                factusWarnings.value = Object.values(result.factus_errors);
+            }
+        } else if (data.error) {
+            factusErrors.value = [data.error];
+        }
+    } catch {
+        // Errors are surfaced through the error callbacks above.
+    } finally {
+        factusProcessing.value = false;
+    }
+};
+
+const isDraft = computed<boolean>(() => createdInvoice.value?.status === 'draft');
+const isFactusSuccess = computed<boolean>(
+    () =>
+        factusSent.value &&
+        (createdInvoice.value?.status === 'validated' || createdInvoice.value?.status === 'pending'),
+);
+const hasWarnings = computed<boolean>(() => factusWarnings.value.length > 0);
 </script>
 
 <template>
@@ -250,8 +364,9 @@ const createSale = async (): Promise<void> => {
                         <Input
                             id="quantity"
                             type="number"
-                            v-model="quantity"
+                            v-model.number="quantity"
                             min="1"
+                            step="1"
                             class="w-full"
                         />
                     </div>
@@ -290,7 +405,7 @@ const createSale = async (): Promise<void> => {
                     </div>
 
                     <div v-else class="overflow-x-auto">
-                        <table class="w-full min-w-[640px] border-collapse text-sm">
+                        <table class="w-full min-w-[680px] border-collapse text-sm">
                             <thead>
                                 <tr class="text-muted-foreground border-b text-left">
                                     <th class="py-2 pr-3 font-medium">Producto</th>
@@ -315,7 +430,16 @@ const createSale = async (): Promise<void> => {
                                         </div>
                                     </td>
                                     <td class="py-2 pr-3 text-right">{{ currency.format(line.product.price) }}</td>
-                                    <td class="py-2 pr-3 text-right">{{ line.quantity }}</td>
+                                    <td class="py-2 pr-3 text-right">
+                                        <Input
+                                            type="number"
+                                            min="1"
+                                            step="1"
+                                            class="ml-auto w-20"
+                                            :model-value="line.quantity"
+                                            @update:model-value="updateQuantity(line, $event)"
+                                        />
+                                    </td>
                                     <td class="py-2 pr-3 text-right">{{ currency.format(lineSubtotal(line)) }}</td>
                                     <td class="py-2 pr-3 text-right">{{ currency.format(lineTax(line)) }}</td>
                                     <td class="py-2 pr-3 text-right font-medium">{{ currency.format(lineTotal(line)) }}</td>
@@ -363,5 +487,133 @@ const createSale = async (): Promise<void> => {
                 <template v-else>Crear Venta</template>
             </Button>
         </div>
+
+        <AlertError v-if="factusErrors.length" title="No se pudo enviar la factura a Factus." :errors="factusErrors" />
+
+        <Card v-if="createdInvoice" data-test="sale-result-card">
+            <CardHeader>
+                <CardTitle>Resultado de la venta</CardTitle>
+            </CardHeader>
+            <CardContent class="space-y-4">
+                <div class="flex flex-wrap items-center gap-3 text-sm">
+                    <span class="text-muted-foreground">Referencia:</span>
+                    <strong>{{ createdInvoice.reference_code }}</strong>
+                    <Badge v-if="isDraft" variant="secondary">Borrador</Badge>
+                    <Badge v-else-if="isFactusSuccess" variant="default">Validada</Badge>
+                    <Badge v-else-if="createdInvoice.status === 'rejected'" variant="destructive">
+                        Rechazada
+                    </Badge>
+                    <Badge v-else variant="secondary">{{ createdInvoice.status }}</Badge>
+                </div>
+
+                <div class="grid gap-1 text-sm">
+                    <div class="flex justify-between">
+                        <span class="text-muted-foreground">Total</span>
+                        <strong>{{ currency.format(Number(createdInvoice.total)) }}</strong>
+                    </div>
+                </div>
+
+                <AlertError
+                    v-if="createdInvoice.status === 'rejected'"
+                    title="La factura fue rechazada por Factus."
+                    :errors="factusErrors.length ? factusErrors : ['La factura fue rechazada. Revisa el estado en tu registro de auditoría.']"
+                />
+
+                <div v-if="isFactusSuccess" class="space-y-4 border-t pt-4">
+                    <div class="flex items-center gap-2 text-sm font-medium text-foreground">
+                        <CheckCircle2 class="size-4 text-green-600" />
+                        {{ factusMessage || 'Factura enviada y validada correctamente.' }}
+                    </div>
+
+                    <div class="grid gap-1 text-sm sm:grid-cols-2">
+                        <div class="flex justify-between gap-2">
+                            <span class="text-muted-foreground">Número Factus</span>
+                            <strong>{{ createdInvoice.factus_number ?? '—' }}</strong>
+                        </div>
+                        <div class="flex justify-between gap-2">
+                            <span class="text-muted-foreground">Estado</span>
+                            <strong>{{ createdInvoice.factus_number ? 'Validada' : 'Pendiente' }}</strong>
+                        </div>
+                        <div v-if="createdInvoice.validated_at" class="flex justify-between gap-2">
+                            <span class="text-muted-foreground">Fecha de validación</span>
+                            <strong>{{ new Date(createdInvoice.validated_at).toLocaleString('es-CO') }}</strong>
+                        </div>
+                    </div>
+
+                    <div v-if="createdInvoice.cufe" class="grid gap-1 text-sm">
+                        <span class="text-muted-foreground">CUFE</span>
+                        <code class="break-all rounded bg-muted p-2 text-xs">{{ createdInvoice.cufe }}</code>
+                    </div>
+
+                    <div v-if="createdInvoice.qr_image" class="flex items-start gap-4">
+                        <img
+                            :src="createdInvoice.qr_image"
+                            alt="Código QR de la factura"
+                            class="size-32 rounded border bg-white"
+                        />
+                        <a
+                            v-if="createdInvoice.qr_code"
+                            :href="createdInvoice.qr_code"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="inline-flex items-center gap-1 text-sm text-primary"
+                        >
+                            Consultar en la DIAN
+                            <ExternalLink class="size-4" />
+                        </a>
+                    </div>
+
+                    <div v-if="createdInvoice.factus_number" class="flex flex-wrap items-center gap-3 border-t pt-4">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            as-child
+                        >
+                            <a
+                                :href="`/ventas/${createdInvoice.id}/document`"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                            >
+                                <FileText class="size-4" />
+                                Ver factura
+                            </a>
+                        </Button>
+                    </div>
+
+                    <div
+                        v-if="hasWarnings"
+                        class="flex items-start gap-2 rounded border border-amber-300 bg-amber-50 p-3 text-sm"
+                    >
+                        <TriangleAlert class="mt-0.5 size-4 shrink-0 text-amber-600" />
+                        <div>
+                            <p class="font-medium text-amber-800">
+                                La factura se validó, pero Factus reportó advertencias:
+                            </p>
+                            <ul class="list-inside list-disc text-amber-700">
+                                <li v-for="(warning, index) in factusWarnings" :key="index">
+                                    {{ warning }}
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-if="isDraft" class="flex justify-end border-t pt-4">
+                    <Button
+                        data-test="send-to-factus-button"
+                        type="button"
+                        :disabled="factusProcessing"
+                        @click="sendInvoiceToFactus"
+                    >
+                        <Spinner v-if="factusProcessing" class="size-4" />
+                        <template v-else>
+                            <Send />
+                            Enviar a Factus
+                        </template>
+                    </Button>
+                </div>
+            </CardContent>
+        </Card>
     </div>
 </template>

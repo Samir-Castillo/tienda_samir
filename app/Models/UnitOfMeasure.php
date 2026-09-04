@@ -14,11 +14,12 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property string $code
  * @property string $name
+ * @property int|null $factus_id
  * @property bool $active
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['code', 'name', 'active'])]
+#[Fillable(['code', 'name', 'active', 'factus_id'])]
 #[Hidden(['pivot'])]
 class UnitOfMeasure extends Model
 {

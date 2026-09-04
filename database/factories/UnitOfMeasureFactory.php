@@ -20,6 +20,7 @@ class UnitOfMeasureFactory extends Factory
         return [
             'code' => fake()->unique()->bothify('UOM####'),
             'name' => fake()->word(),
+            'factus_id' => null,
             'active' => true,
         ];
     }

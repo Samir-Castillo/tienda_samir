@@ -10,17 +10,16 @@ class TaxSeeder extends Seeder
     /**
      * Seed baseline taxes for development.
      *
-     * NOTE: The codes below are generic development values. They are NOT
-     * official Factus tribute codes. Confirmed official codes must be
-     * obtained from the Factus API before real invoices are issued.
+     * The IVA tax uses the official Factus tribute code "01" (19%) so the
+     * item tribute can be resolved to Factus tribute_id 1 for the sandbox test.
      */
     public function run(): void
     {
         $taxes = [
             [
-                'code' => 'TAX-19',
-                'name' => 'IVA 19% (desarrollo)',
-                'description' => 'Impuesto al Valor Agregado 19% para desarrollo. El código oficial de Factus no está confirmado.',
+                'code' => '01',
+                'name' => 'IVA 19%',
+                'description' => 'Impuesto al Valor Agregado 19% (código oficial Factus 01 = IVA).',
             ],
             [
                 'code' => 'TAX-0',
@@ -30,7 +29,7 @@ class TaxSeeder extends Seeder
         ];
 
         foreach ($taxes as $tax) {
-            Tax::query()->firstOrCreate(
+            Tax::query()->updateOrCreate(
                 ['code' => $tax['code']],
                 [
                     'name' => $tax['name'],

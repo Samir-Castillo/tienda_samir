@@ -1,0 +1,22 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::table('invoice_items', function (Blueprint $table) {
+            $table->string('tribute_id', 10)->nullable()->after('standard_code');
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::table('invoice_items', function (Blueprint $table) {
+            $table->dropColumn('tribute_id');
+        });
+    }
+};
