@@ -1,12 +1,13 @@
 <?php
 
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\VentaController;
 use Illuminate\Support\Facades\Route;
 
 Route::inertia('/', 'Welcome')->name('home');
 
 Route::middleware(['auth', 'verified'])->group(function () {
-    Route::inertia('dashboard', 'Dashboard')->name('dashboard');
+    Route::get('/dashboard', DashboardController::class)->name('dashboard');
     Route::get('/ventas', [VentaController::class, 'create'])->name('ventas.create');
     Route::get('/ventas/{invoice}/document', [VentaController::class, 'document'])->name('ventas.document');
 });
