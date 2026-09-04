@@ -30,5 +30,20 @@ class NumberingRangeSeeder extends Seeder
                 'raw_data' => null,
             ],
         );
+
+        NumberingRange::query()->firstOrCreate(
+            ['factus_id' => 8],
+            [
+                'name' => 'Factura de Venta',
+                'prefix' => 'SETP',
+                'range_from' => 990000000,
+                'range_to' => 995000000,
+                'current_number' => 990038672,
+                'resolution_number' => '18760000001',
+                'resolution_date' => null,
+                'active' => true,
+                'raw_data' => null,
+            ],
+        );
     }
 }
